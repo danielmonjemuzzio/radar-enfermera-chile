@@ -41,12 +41,10 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
 ]
 
-# Palabras obligatorias (al menos una debe estar en el título)
 MUST_INCLUDE_REGEX = re.compile(
     r"\b(enfermer[ao]s?|enfermer[ií]a|eu\b|e\.u\.)\b", re.IGNORECASE
 )
 
-# Filtro para descartar ofertas que buscan exclusivamente TENS o áreas no clínicas
 EXCLUDE_REGEX = re.compile(
     r"\b(t[eé]cnico\s+en\s+enfermer[ií]a|tens\b|auxiliar\s+de\s+enfermer[ií]a|"
     r"veterinari[ao]|agr[oó]nom[ao]|prevencionista|guardia|aseo|limpieza)\b",
@@ -54,9 +52,6 @@ EXCLUDE_REGEX = re.compile(
 )
 
 
-# ==========================================
-# SESIÓN HTTP ROBUSTA CON RETRY
-# ==========================================
 def create_session() -> requests.Session:
     session = requests.Session()
     retry = Retry(
@@ -82,9 +77,6 @@ def get_headers() -> Dict[str, str]:
     }
 
 
-# ==========================================
-# GESTIÓN DE HISTORIAL (seen_jobs.json)
-# ==========================================
 def load_seen_jobs() -> Set[str]:
     if not os.path.exists(SEEN_JOBS_FILE):
         return set()
@@ -122,9 +114,6 @@ def is_valid_nurse_offer(title: str, description: str = "") -> bool:
     return True
 
 
-# ==========================================
-# SCORING PARA RANKING TOP 30
-# ==========================================
 def score_job(job: Dict) -> int:
     score = 50
     text = f"{job.get('title', '')} {job.get('description', '')} {job.get('company', '')}".lower()
@@ -142,8 +131,6 @@ def score_job(job: Dict) -> int:
             "bupa",
             "indisa",
             "alemana",
-            "dávila",
-            "davila",
             "achs",
             "mutual",
             "ist",
@@ -180,9 +167,308 @@ def score_job(job: Dict) -> int:
     return score
 
 
-# ==========================================
-# 1. SCRAPER: COMPUTRABAJO CHILE
-# ==========================================
 def scrape_computrabajo(session: requests.Session) -> List[Dict]:
     jobs = []
     urls = [
+        "https://cl.computrabajo.com/trabajo-de-enfermera?pubdate=3",
+        "https://cl.computrabajo.com/trabajo-de-enfermero?pubdate=3",
+        "https://cl.computrabajo.com/trabajo-de-enfermeria?pubdate=3"
+    ]
+    for url in urls:
+        try:
+            resp = session.get(url, headers=get_headers(), timeout=15)
+            if resp.status_code != 200:
+                continue
+            soup = BeautifulSoup(resp.text, "lxml")
+            articles = soup.select("article.box_offer")
+            for art in articles:
+                a_tag = art.select_one("h2 a, a.js-o-link")
+                if not a_tag:
+                    continue
+                title = a_tag.get_text(strip=True)
+                href = a_tag.get("href", "")
+                link = urljoin("https://cl.computrabajo.com", href)
+
+                comp_tag = art.select_one("p.fs16, a.fc_base")
+                company = comp_tag.get_text(strip=True) if comp_tag else "Computrabajo"
+
+                loc_tag = art.select_one("p.fs13")
+                location = loc_tag.get_text(" ", strip=True) if loc_tag else "Chile"
+
+                desc_tag = art.select_one("p.mb10")
+                desc = desc_tag.get_text(" ", strip=True) if desc_tag else ""
+
+                if is_valid_nurse_offer(title, desc):
+                    jobs.append({
+                        "title": title,
+                        "company": company,
+                        "location": location,
+                        "url": link,
+                        "portal": "Computrabajo CL",
+                        "date_label": "Últimas 48h",
+                        "description": desc,
+                    })
+            time.sleep(random.uniform(1.0, 2.0))
+        except Exception as e:
+            logger.warning(f"Error en Computrabajo: {e}")
+    return jobs
+
+
+def scrape_chiletrabajos(session: requests.Session) -> List[Dict]:
+    jobs = []
+    urls = [
+        "https://www.chiletrabajos.cl/encuentra-un-empleo?2=enfermera&13=&f=2",
+        "https://www.chiletrabajos.cl/encuentra-un-empleo?2=enfermero&13=&f=2"
+    ]
+    for url in urls:
+        try:
+            resp = session.get(url, headers=get_headers(), timeout=15)
+            if resp.status_code != 200:
+                continue
+            soup = BeautifulSoup(resp.text, "lxml")
+            items = soup.select("div.job-item")
+            for item in items:
+                title_tag = item.select_one("h2.title a")
+                if not title_tag:
+                    continue
+                title = title_tag.get_text(strip=True)
+                link = urljoin("https://www.chiletrabajos.cl", title_tag.get("href", ""))
+
+                meta_tags = item.select("h3.meta")
+                company_loc = meta_tags[0].get_text(" ", strip=True) if meta_tags else "Chile"
+                parts = [p.strip() for p in company_loc.split(",") if p.strip()]
+                company = parts[0] if parts else "Confidencial"
+                location = parts[-1] if len(parts) > 1 else "Chile"
+
+                desc_tag = item.select_one("p.description")
+                desc = desc_tag.get_text(" ", strip=True) if desc_tag else ""
+
+                if is_valid_nurse_offer(title, desc):
+                    jobs.append({
+                        "title": title,
+                        "company": company,
+                        "location": location,
+                        "url": link,
+                        "portal": "Chiletrabajos",
+                        "date_label": "Reciente (48h)",
+                        "description": desc,
+                    })
+            time.sleep(random.uniform(1.0, 2.0))
+        except Exception as e:
+            logger.warning(f"Error en Chiletrabajos: {e}")
+    return jobs
+
+
+def scrape_jora_chile(session: requests.Session) -> List[Dict]:
+    jobs = []
+    for q in ["Enfermera", "Enfermera Clinica"]:
+        url = f"https://cl.jora.com/j?q={quote_plus(q)}&l=Chile&a=2d&sort=date"
+        try:
+            resp = session.get(url, headers=get_headers(), timeout=15)
+            if resp.status_code != 200:
+                continue
+            soup = BeautifulSoup(resp.text, "lxml")
+            cards = soup.select("div.job-card, div.result")
+            for card in cards:
+                a_tag = card.select_one("a.job-link, h2 a, h3 a")
+                if not a_tag:
+                    continue
+                title = a_tag.get_text(strip=True)
+                link = urljoin("https://cl.jora.com", a_tag.get("href", ""))
+                comp_tag = card.select_one("span.job-company, div.company")
+                loc_tag = card.select_one("a.job-location, span.job-location, div.location")
+                desc_tag = card.select_one("div.job-abstract, div.summary")
+
+                company = comp_tag.get_text(strip=True) if comp_tag else "Jora Chile"
+                location = loc_tag.get_text(strip=True) if loc_tag else "Chile"
+                desc = desc_tag.get_text(" ", strip=True) if desc_tag else ""
+
+                if is_valid_nurse_offer(title, desc):
+                    jobs.append({
+                        "title": title,
+                        "company": company,
+                        "location": location,
+                        "url": link,
+                        "portal": "Jora Chile",
+                        "date_label": "Últimas 48h",
+                        "description": desc,
+                    })
+            time.sleep(random.uniform(1.0, 2.0))
+        except Exception as e:
+            logger.warning(f"Error en Jora Chile: {e}")
+    return jobs
+
+
+def scrape_multiportal_rss(session: requests.Session) -> List[Dict]:
+    jobs = []
+    portal_groups = [
+        ("Empleos Públicos / BNE", '(site:empleospublicos.cl OR site:bne.cl) ("enfermera" OR "enfermero") when:2d'),
+        ("Laborum / Trabajando", '(site:laborum.cl OR site:trabajando.cl) ("enfermera" OR "enfermero") when:2d'),
+        ("LinkedIn / Indeed", '(site:cl.linkedin.com/jobs OR site:cl.indeed.com) ("enfermera" OR "enfermero") when:2d'),
+        ("Clínicas", '(site:redsalud.cl OR site:bupa.cl OR site:ucchristus.cl OR site:indisa.cl OR site:alemana.cl) ("enfermera" OR "enfermero") when:2d')
+    ]
+
+    for portal_label, dork in portal_groups:
+        rss_url = f"https://news.google.com/rss/search?q={quote_plus(dork)}&hl=es-419&gl=CL&ceid=CL:es-419"
+        try:
+            resp = session.get(rss_url, headers=get_headers(), timeout=15)
+            if resp.status_code == 200 and resp.content:
+                root = ET.fromstring(resp.content)
+                for item in root.findall(".//item"):
+                    raw_title = item.findtext("title") or ""
+                    link = item.findtext("link") or ""
+                    pub_date = item.findtext("pubDate") or "Últimas 48h"
+                    source = item.findtext("source") or portal_label
+
+                    title_parts = raw_title.rsplit(" - ", 1)
+                    title = title_parts[0].strip()
+                    company = title_parts[1].strip() if len(title_parts) > 1 else source
+
+                    if is_valid_nurse_offer(title):
+                        jobs.append({
+                            "title": title,
+                            "company": company,
+                            "location": "Chile",
+                            "url": link,
+                            "portal": source,
+                            "date_label": pub_date[:16],
+                            "description": raw_title,
+                        })
+        except Exception as e:
+            logger.warning(f"Error RSS ({portal_label}): {e}")
+        time.sleep(random.uniform(0.8, 1.2))
+    return jobs
+
+
+def analyze_nurse_offer(job: Dict, session: requests.Session) -> str:
+    text = f"{job['title']} | {job['company']} | {job['location']} | {job.get('description', '')}"
+
+    turno = "Por confirmar en entrevista (Diurno / Turnos)"
+    if re.search(r"4to\s*turno|cuarto\s*turno", text, re.I):
+        turno = "Cuarto Turno / 4° Turno"
+    elif re.search(r"diurno|lunes\s+a\s+viernes", text, re.I):
+        turno = "Horario Diurno (Lunes a Viernes)"
+
+    requisitos = ["Registro SIS", "Título Enfermera/o"]
+    if re.search(r"iaas", text, re.I):
+        requisitos.append("Curso IAAS")
+    if re.search(r"acls|bls|reanimaci[oó]n", text, re.I):
+        requisitos.append("ACLS / BLS vigente")
+
+    req_joined = ", ".join(requisitos)
+    local_summary = f"• <b>Modalidad:</b> {turno}\n• <b>Requisitos:</b> {req_joined}"
+
+    if not GROQ_API_KEY:
+        return local_summary
+
+    try:
+        payload = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Resume en 2 viñetas breves: 1) Turno/Jornada, 2) Requisitos técnicos (SIS, IAAS, ACLS)."
+                },
+                {"role": "user", "content": text[:800]}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 120,
+        }
+        resp = session.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return html.escape(resp.json()["choices"][0]["message"]["content"].strip())
+    except Exception:
+        pass
+
+    return local_summary
+
+
+def send_telegram_message(session: requests.Session, text: str) -> bool:
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    try:
+        resp = session.post(url, json=payload, timeout=15)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def main():
+    logger.info("Iniciando barrido de enfermería en Chile...")
+    session = create_session()
+    seen_jobs = load_seen_jobs()
+
+    raw_jobs: List[Dict] = []
+    raw_jobs.extend(scrape_computrabajo(session))
+    raw_jobs.extend(scrape_chiletrabajos(session))
+    raw_jobs.extend(scrape_jora_chile(session))
+    raw_jobs.extend(scrape_multiportal_rss(session))
+
+    unique_new_jobs: List[Dict] = []
+    current_run_ids: Set[str] = set()
+
+    for job in raw_jobs:
+        jid = make_job_id(job["title"], job["company"], job["url"])
+        if jid in seen_jobs or jid in current_run_ids:
+            continue
+        current_run_ids.add(jid)
+        job["id"] = jid
+        job["score"] = score_job(job)
+        unique_new_jobs.append(job)
+
+    unique_new_jobs.sort(key=lambda x: x["score"], reverse=True)
+    top_30_jobs = unique_new_jobs[:MAX_JOBS_PER_RUN]
+
+    if not top_30_jobs:
+        logger.info("No hay ofertas nuevas.")
+        return
+
+    now_cl = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y %H:%M")
+    header_msg = f"🏥 <b>RADAR ENFERMERÍA CHILE — TOP {len(top_30_jobs)} OFERTAS</b>\n📅 <i>{now_cl} CL</i>"
+    send_telegram_message(session, header_msg)
+    time.sleep(1.5)
+
+    sent_count = 0
+    for idx, job in enumerate(top_30_jobs, start=1):
+        analysis = analyze_nurse_offer(job, session)
+        title_esc = html.escape(job["title"])
+        comp_esc = html.escape(job["company"])
+        loc_esc = html.escape(job["location"])
+        portal_esc = html.escape(job["portal"])
+        desc_short = html.escape((job.get("description") or "")[:200])
+        url_clean = job["url"]
+
+        desc_line = f"📝 <i>{desc_short}...</i>\n\n" if desc_short else "\n"
+
+        msg = (
+            f"🩺 <b>#{idx} | {title_esc}</b>\n"
+            f"🏢 <b>Institución:</b> {comp_esc}\n"
+            f"📍 <b>Ubicación:</b> {loc_esc} | 🌐 {portal_esc}\n\n"
+            f"{analysis}\n"
+            f"{desc_line}"
+            f'🔗 <a href="{url_clean}">Ver oferta y postular</a>'
+        )
+
+        if send_telegram_message(session, msg):
+            seen_jobs.add(job["id"])
+            sent_count += 1
+            time.sleep(random.uniform(1.8, 2.5))
+
+    save_seen_jobs(seen_jobs)
+    logger.info(f"Proceso finalizado. {sent_count} ofertas enviadas.")
+
+
+if __name__ == "__main__":
+    main()
