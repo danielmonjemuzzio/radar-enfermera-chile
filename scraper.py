@@ -18,7 +18,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # ==========================================
-# CONFIGURACIÓN GENERAL Y LOGGING
+# CONFIGURACION GENERAL Y LOGGING
 # ==========================================
 logging.basicConfig(
     level=logging.INFO,
@@ -131,6 +131,8 @@ def score_job(job: Dict) -> int:
             "bupa",
             "indisa",
             "alemana",
+            "dávila",
+            "davila",
             "achs",
             "mutual",
             "ist",
@@ -172,7 +174,7 @@ def scrape_computrabajo(session: requests.Session) -> List[Dict]:
     urls = [
         "https://cl.computrabajo.com/trabajo-de-enfermera?pubdate=3",
         "https://cl.computrabajo.com/trabajo-de-enfermero?pubdate=3",
-        "https://cl.computrabajo.com/trabajo-de-enfermeria?pubdate=3"
+        "https://cl.computrabajo.com/trabajo-de-enfermeria?pubdate=3",
     ]
     for url in urls:
         try:
@@ -199,18 +201,21 @@ def scrape_computrabajo(session: requests.Session) -> List[Dict]:
                 desc = desc_tag.get_text(" ", strip=True) if desc_tag else ""
 
                 if is_valid_nurse_offer(title, desc):
-                    jobs.append({
-                        "title": title,
-                        "company": company,
-                        "location": location,
-                        "url": link,
-                        "portal": "Computrabajo CL",
-                        "date_label": "Últimas 48h",
-                        "description": desc,
-                    })
+                    jobs.append(
+                        {
+                            "title": title,
+                            "company": company,
+                            "location": location,
+                            "url": link,
+                            "portal": "Computrabajo CL",
+                            "date_label": "Últimas 48h",
+                            "description": desc,
+                        }
+                    )
             time.sleep(random.uniform(1.0, 2.0))
         except Exception as e:
             logger.warning(f"Error en Computrabajo: {e}")
+    logger.info(f"Computrabajo CL: {len(jobs)} ofertas.")
     return jobs
 
 
@@ -218,7 +223,7 @@ def scrape_chiletrabajos(session: requests.Session) -> List[Dict]:
     jobs = []
     urls = [
         "https://www.chiletrabajos.cl/encuentra-un-empleo?2=enfermera&13=&f=2",
-        "https://www.chiletrabajos.cl/encuentra-un-empleo?2=enfermero&13=&f=2"
+        "https://www.chiletrabajos.cl/encuentra-un-empleo?2=enfermero&13=&f=2",
     ]
     for url in urls:
         try:
@@ -244,18 +249,21 @@ def scrape_chiletrabajos(session: requests.Session) -> List[Dict]:
                 desc = desc_tag.get_text(" ", strip=True) if desc_tag else ""
 
                 if is_valid_nurse_offer(title, desc):
-                    jobs.append({
-                        "title": title,
-                        "company": company,
-                        "location": location,
-                        "url": link,
-                        "portal": "Chiletrabajos",
-                        "date_label": "Reciente (48h)",
-                        "description": desc,
-                    })
+                    jobs.append(
+                        {
+                            "title": title,
+                            "company": company,
+                            "location": location,
+                            "url": link,
+                            "portal": "Chiletrabajos",
+                            "date_label": "Reciente (48h)",
+                            "description": desc,
+                        }
+                    )
             time.sleep(random.uniform(1.0, 2.0))
         except Exception as e:
             logger.warning(f"Error en Chiletrabajos: {e}")
+    logger.info(f"Chiletrabajos: {len(jobs)} ofertas.")
     return jobs
 
 
@@ -284,18 +292,21 @@ def scrape_jora_chile(session: requests.Session) -> List[Dict]:
                 desc = desc_tag.get_text(" ", strip=True) if desc_tag else ""
 
                 if is_valid_nurse_offer(title, desc):
-                    jobs.append({
-                        "title": title,
-                        "company": company,
-                        "location": location,
-                        "url": link,
-                        "portal": "Jora Chile",
-                        "date_label": "Últimas 48h",
-                        "description": desc,
-                    })
+                    jobs.append(
+                        {
+                            "title": title,
+                            "company": company,
+                            "location": location,
+                            "url": link,
+                            "portal": "Jora Chile",
+                            "date_label": "Últimas 48h",
+                            "description": desc,
+                        }
+                    )
             time.sleep(random.uniform(1.0, 2.0))
         except Exception as e:
             logger.warning(f"Error en Jora Chile: {e}")
+    logger.info(f"Jora Chile: {len(jobs)} ofertas.")
     return jobs
 
 
@@ -305,7 +316,7 @@ def scrape_multiportal_rss(session: requests.Session) -> List[Dict]:
         ("Empleos Públicos / BNE", '(site:empleospublicos.cl OR site:bne.cl) ("enfermera" OR "enfermero") when:2d'),
         ("Laborum / Trabajando", '(site:laborum.cl OR site:trabajando.cl) ("enfermera" OR "enfermero") when:2d'),
         ("LinkedIn / Indeed", '(site:cl.linkedin.com/jobs OR site:cl.indeed.com) ("enfermera" OR "enfermero") when:2d'),
-        ("Clínicas", '(site:redsalud.cl OR site:bupa.cl OR site:ucchristus.cl OR site:indisa.cl OR site:alemana.cl) ("enfermera" OR "enfermero") when:2d')
+        ("Clínicas", '(site:redsalud.cl OR site:bupa.cl OR site:ucchristus.cl OR site:indisa.cl OR site:alemana.cl) ("enfermera" OR "enfermero") when:2d'),
     ]
 
     for portal_label, dork in portal_groups:
@@ -325,18 +336,47 @@ def scrape_multiportal_rss(session: requests.Session) -> List[Dict]:
                     company = title_parts[1].strip() if len(title_parts) > 1 else source
 
                     if is_valid_nurse_offer(title):
-                        jobs.append({
-                            "title": title,
-                            "company": company,
-                            "location": "Chile",
-                            "url": link,
-                            "portal": source,
-                            "date_label": pub_date[:16],
-                            "description": raw_title,
-                        })
+                        jobs.append(
+                            {
+                                "title": title,
+                                "company": company,
+                                "location": "Chile",
+                                "url": link,
+                                "portal": source,
+                                "date_label": pub_date[:16],
+                                "description": raw_title,
+                            }
+                        )
         except Exception as e:
             logger.warning(f"Error RSS ({portal_label}): {e}")
+
+        dork_bing = dork.replace("when:2d", "").strip()
+        bing_url = f"https://www.bing.com/search?q={quote_plus(dork_bing)}&format=rss"
+        try:
+            resp_b = session.get(bing_url, headers=get_headers(), timeout=15)
+            if resp_b.status_code == 200 and b"<rss" in resp_b.content[:250]:
+                root_b = ET.fromstring(resp_b.content)
+                for item in root_b.findall(".//item"):
+                    title = (item.findtext("title") or "").strip()
+                    link = (item.findtext("link") or "").strip()
+                    desc = (item.findtext("description") or "").strip()
+                    if is_valid_nurse_offer(title, desc):
+                        jobs.append(
+                            {
+                                "title": title,
+                                "company": portal_label,
+                                "location": "Chile",
+                                "url": link,
+                                "portal": portal_label,
+                                "date_label": "Últimas 48h",
+                                "description": desc,
+                            }
+                        )
+        except Exception as e:
+            logger.debug(f"Bing RSS ({portal_label}): {e}")
+
         time.sleep(random.uniform(0.8, 1.2))
+    logger.info(f"Multiportal RSS: {len(jobs)} ofertas.")
     return jobs
 
 
@@ -367,16 +407,19 @@ def analyze_nurse_offer(job: Dict, session: requests.Session) -> str:
             "messages": [
                 {
                     "role": "system",
-                    "content": "Resume en 2 viñetas breves: 1) Turno/Jornada, 2) Requisitos técnicos (SIS, IAAS, ACLS)."
+                    "content": "Resume en 2 viñetas breves: 1) Turno/Jornada, 2) Requisitos técnicos (SIS, IAAS, ACLS).",
                 },
-                {"role": "user", "content": text[:800]}
+                {"role": "user", "content": text[:800]},
             ],
             "temperature": 0.2,
             "max_tokens": 120,
         }
         resp = session.post(
             "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
             json=payload,
             timeout=10,
         )
@@ -390,6 +433,7 @@ def analyze_nurse_offer(job: Dict, session: requests.Session) -> str:
 
 def send_telegram_message(session: requests.Session, text: str) -> bool:
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        logger.error("Faltan TELEGRAM_TOKEN o TELEGRAM_CHAT_ID en Secrets.")
         return False
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
@@ -400,8 +444,12 @@ def send_telegram_message(session: requests.Session, text: str) -> bool:
     }
     try:
         resp = session.post(url, json=payload, timeout=15)
-        return resp.status_code == 200
-    except Exception:
+        if resp.status_code == 200:
+            return True
+        logger.warning(f"Telegram API error {resp.status_code}: {resp.text}")
+        return False
+    except Exception as e:
+        logger.error(f"Error enviando a Telegram: {e}")
         return False
 
 
@@ -432,11 +480,14 @@ def main():
     top_30_jobs = unique_new_jobs[:MAX_JOBS_PER_RUN]
 
     if not top_30_jobs:
-        logger.info("No hay ofertas nuevas.")
+        logger.info("No hay ofertas nuevas en esta corrida.")
         return
 
     now_cl = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y %H:%M")
-    header_msg = f"🏥 <b>RADAR ENFERMERÍA CHILE — TOP {len(top_30_jobs)} OFERTAS</b>\n📅 <i>{now_cl} CL</i>"
+    header_msg = (
+        f"🏥 <b>RADAR ENFERMERÍA CHILE — TOP {len(top_30_jobs)} OFERTAS</b>\n"
+        f"📅 <i>{now_cl} CL</i>"
+    )
     send_telegram_message(session, header_msg)
     time.sleep(1.5)
 
@@ -448,7 +499,7 @@ def main():
         loc_esc = html.escape(job["location"])
         portal_esc = html.escape(job["portal"])
         desc_short = html.escape((job.get("description") or "")[:200])
-        url_clean = job["url"]
+        url_clean = html.escape(job["url"], quote=True)
 
         desc_line = f"📝 <i>{desc_short}...</i>\n\n" if desc_short else "\n"
 
